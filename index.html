@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prayer Times</title>
+    <meta name="theme-color" content="#007bff" />
+    <meta
+      name="description"
+      content="Islamic Prayer Times - Get accurate prayer times for your location"
+    />
+    <style>
+      :root {
+        --bg-primary: #f9fafb;
+        --bg-gradient: linear-gradient(to bottom, #e3f2fd, #f9fafb);
+        --text-primary: #333;
+        --accent-color: #007bff;
+        --table-bg: #fff;
+        --border-color: #ddd;
+        --countdown-color: #d9534f;
+        --shadow-color: rgba(0, 0, 0, 0.1);
+      }
+
+      * {
+        transition: background-color 0.3s, color 0.3s, box-shadow 0.3s;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        text-align: center;
+        padding: 20px;
+        background: var(--bg-gradient);
+        color: var(--text-primary);
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        color: var(--accent-color);
+        text-shadow: 0 2px 4px var(--shadow-color);
+      }
+
+      #clock {
+        font-size: 3em;
+        font-weight: bold;
+        margin-bottom: 20px;
+        color: var(--text-primary);
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      #calendar {
+        font-size: 1.2em;
+        margin-bottom: 20px;
+        color: var(--text-primary);
+      }
+
+      table {
+        margin: 20px auto;
+        border-collapse: collapse;
+        width: 90%;
+        max-width: 500px;
+        background: var(--table-bg);
+        border-radius: 10px;
+        box-shadow: 0 4px 8px var(--shadow-color);
+        overflow: hidden;
+      }
+
+      th,
+      td {
+        padding: 15px;
+        border-bottom: 1px solid var(--border-color);
+        text-align: left;
+      }
+
+      th {
+        background: var(--accent-color);
+        color: #fff;
+        font-weight: bold;
+      }
+
+      tr:hover td {
+        background: rgba(0, 123, 255, 0.1);
+      }
+
+      #countdown {
+        color: var(--countdown-color);
+        font-size: 1.3em;
+        font-weight: 500;
+        margin: 20px 0;
+      }
+
+      #location {
+        display: inline-block;
+        padding: 10px 20px;
+        border: 1px solid var(--accent-color);
+        border-radius: 5px;
+        background: var(--table-bg);
+        color: var(--accent-color);
+        margin: 20px auto;
+        box-shadow: 0 2px 4px var(--shadow-color);
+        max-width: fit-content;
+      }
+
+      button {
+        padding: 10px 20px;
+        font-size: 1em;
+        color: #fff;
+        background: var(--accent-color);
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        box-shadow: 0 2px 4px var(--shadow-color);
+        transition: background-color 0.3s, transform 0.2s;
+      }
+
+      button:hover {
+        background: #0056b3;
+        transform: scale(1.05);
+      }
+
+      button:active {
+        transform: scale(0.95);
+      }
+
+      footer {
+        margin-top: auto;
+        padding: 10px;
+        background: transparent;
+        color: var(--text-primary);
+        border-top: none;
+        width: 100%;
+        text-align: center;
+      }
+
+      #loading {
+        font-size: 1.2em;
+        color: var(--accent-color);
+        margin: 20px 0;
+      }
+
+      table tr:nth-child(even) {
+        background-color: #f2f2f2;
+      }
+
+      table tr:nth-child(odd) {
+        background-color: #ffffff;
+      }
+
+      table tr:hover {
+        background-color: rgba(0, 123, 255, 0.1);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Prayer Times</h1>
+    <div id="clock" aria-live="polite" aria-label="Current time"></div>
+    <div id="calendar" aria-live="polite"></div>
+    <p id="loading" aria-live="polite">
+      <span class="spinner"></span> Fetching your location...
+    </p>
+    <button
+      onclick="debouncedToggleTimeFormat()"
+      aria-label="Toggle time format between 12-hour and 24-hour"
+    >
+      12h ⇄ 24h
+    </button>
+
+    <div id="countdown" aria-live="polite" aria-label="Time left for next prayer"></div>
+    <table
+      id="times"
+      style="display: none"
+      aria-label="Prayer times table"
+    ></table>
+    <p id="location" style="display: none" aria-live="polite"></p>
+
+    <!-- <footer>© 2025 IBTECH. All rights reserved.</footer> -->
+
+    <script>
+      let prayerTimes = {};
+      let use24HourFormat = false;
+      let lastCountdownText = "";
+
+      function updateClock() {
+        const now = new Date();
+        document.getElementById("clock").innerText = now.toLocaleTimeString(
+          "en-US",
+          { hour12: !use24HourFormat }
+        );
+      }
+
+      setInterval(updateClock, 1000);
+
+      function updateCalendar() {
+        const now = new Date();
+
+        // Get the Gregorian date in DD-MM-YYYY format (required by API)
+        const day = String(now.getDate()).padStart(2, "0");
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const year = now.getFullYear();
+        const formattedDate = `${day}-${month}-${year}`;
+
+        // Display Gregorian date immediately
+        const gregorianDate = now.toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        });
+
+        document.getElementById("calendar").innerText = gregorianDate;
+
+        // Fetch Hijri date
+        fetch(`https://api.aladhan.com/v1/gToH?date=${formattedDate}`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data?.data?.hijri) {
+              const hijriDay = data.data.hijri.day;
+              const hijriMonth = data.data.hijri.month.en; // English month name
+              const hijriYear = data.data.hijri.year;
+
+              const hijriFormatted = `${hijriMonth}-${hijriDay}-${hijriYear}`;
+              document.getElementById(
+                "calendar"
+              ).innerText = `${gregorianDate} | ${hijriFormatted}`;
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching Hijri date:", error);
+          });
+      }
+
+      // Update every minute
+      setInterval(updateCalendar, 60000);
+      updateCalendar();
+
+      function formatTime(date, removeSeconds = false) {
+        if (!date) return "Invalid";
+        const options = {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: !use24HourFormat,
+        };
+        if (!removeSeconds) options.second = "2-digit";
+        return date.toLocaleTimeString("en-US", options);
+      }
+
+      function toggleTimeFormat() {
+        use24HourFormat = !use24HourFormat;
+        displayPrayerTimes();
+      }
+
+      function getPrayerTimes(lat, lon) {
+        const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=1`;
+
+        fetch(url)
+          .then((response) => response.json())
+          .then((data) => {
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("times").style.display = "table";
+            prayerTimes = {};
+
+            const timings = data.data.timings;
+            const methodName = data.data.meta.method.name;
+
+            const validPrayers = [
+              "Fajr",
+              "Sunrise",
+              "Dhuhr",
+              "Asr",
+              "Maghrib",
+              "Isha",
+            ];
+            validPrayers.forEach((prayer) => {
+              let [hours, minutes] = timings[prayer].split(":").map(Number);
+              prayerTimes[prayer] = new Date();
+              prayerTimes[prayer].setHours(hours, minutes, 0);
+            });
+
+            displayPrayerTimes();
+            getLocationName(lat, lon);
+
+            const locationElement = document.getElementById("location");
+            const methodDiv = document.createElement("div");
+            methodDiv.id = "method";
+            methodDiv.style.marginTop = "10px";
+            methodDiv.innerHTML = `Calculation Method: <strong>${methodName}</strong>`;
+            locationElement.after(methodDiv);
+
+            updateCountdown();
+          })
+          .catch((error) => {
+            console.error("Error:", error);
+            document.getElementById("loading").innerText =
+              "Error fetching prayer times. Please try again later.";
+          });
+      }
+
+      function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+          const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+          };
+          clearTimeout(timeout);
+          timeout = setTimeout(later, wait);
+        };
+      }
+
+      const debouncedToggleTimeFormat = debounce(toggleTimeFormat, 250);
+
+      function displayPrayerTimes() {
+        let tableHTML = `<tr><th>Prayer</th><th>Time</th></tr>`;
+        for (const [prayer, time] of Object.entries(prayerTimes)) {
+          tableHTML += `<tr><td>${prayer}</td><td>${formatTime(
+            time,
+            true
+          )}</td></tr>`;
+        }
+        document.getElementById("times").innerHTML = tableHTML;
+      }
+
+      function updateCountdown() {
+        if (Object.keys(prayerTimes).length === 0) {
+          document.getElementById("countdown").innerText = "";
+          return;
+        }
+
+        const now = new Date();
+        let nextPrayer = null;
+        let nextPrayerName = "";
+
+        for (const [prayer, time] of Object.entries(prayerTimes)) {
+          if (time > now) {
+            nextPrayer = time;
+            nextPrayerName = prayer;
+            break;
+          }
+        }
+
+        if (nextPrayer) {
+          const diff = Math.floor((nextPrayer - now) / 1000);
+          const hours = Math.floor(diff / 3600);
+          const minutes = Math.floor((diff % 3600) / 60);
+          const seconds = diff % 60;
+
+          const countdownText =
+            hours > 0
+              ? `Time left for ${nextPrayerName}: ${hours}h ${minutes}m ${seconds}s`
+              : `Time left for ${nextPrayerName}: ${minutes}m ${seconds}s`;
+
+          if (countdownText !== lastCountdownText) {
+            document.getElementById("countdown").innerText = countdownText;
+            lastCountdownText = countdownText;
+          }
+        } else {
+          document.getElementById("countdown").innerText =
+            "All prayers for today are over.";
+        }
+      }
+
+      setInterval(updateCountdown, 1000);
+
+      function getLocation() {
+        if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const lat = position.coords.latitude;
+              const lon = position.coords.longitude;
+              getPrayerTimes(lat, lon);
+            },
+            (error) => {
+              console.error("Geolocation error:", error);
+              document.getElementById("loading").innerText =
+                "Unable to fetch location. Please enable location services and refresh the page.";
+            }
+          );
+        } else {
+          document.getElementById("loading").innerText =
+            "Geolocation not supported. Please enter your location manually.";
+        }
+      }
+
+      function getLocationName(lat, lon) {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+
+        fetch(url)
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("Failed to fetch location name");
+            }
+            return response.json();
+          })
+          .then((data) => {
+            const city =
+              data.address.city ||
+              data.address.town ||
+              data.address.village ||
+              "Unknown";
+            const country = data.address.country || "Unknown";
+
+            const locationElement = document.getElementById("location");
+            locationElement.innerText = `Your Location: ${city}, ${country}`;
+            locationElement.style.display = "block"; // Make the location visible
+          })
+          .catch((error) => {
+            console.error("Error fetching location name:", error);
+            const locationElement = document.getElementById("location");
+            locationElement.innerText = "Location not found.";
+            locationElement.style.display = "block"; // Show error message
+          });
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        getLocation();
+      });
+    </script>
+  </body>
+</html>
